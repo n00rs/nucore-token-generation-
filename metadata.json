@@ -1,0 +1,5 @@
+{
+  "name": "API Token Generation Admin",
+  "description": "A secure and user-friendly interface for generating, managing, and revoking API access tokens based on a detailed solution design. Allows administrators to configure token expiry, scope, and security restrictions like allowed IPs and domains.",
+  "requestFramePermissions": []
+}
