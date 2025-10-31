@@ -1,4 +1,3 @@
-
 import type { Customer } from './types';
 
 export const APPLICATIONS = [
@@ -43,3 +42,8 @@ export const MOCK_CUSTOMERS: Customer[] = [
         endpoints: ['/save_vouchers', '/save_payment', '/issue_refund'] 
     },
 ];
+
+// A common list of all available endpoints, derived from all customers.
+export const COMMON_ENDPOINTS = Array.from(
+    new Set(MOCK_CUSTOMERS.flatMap(c => c.endpoints))
+).sort();

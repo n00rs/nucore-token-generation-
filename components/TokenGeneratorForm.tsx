@@ -1,6 +1,6 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import type { TokenGenerationRequest, ScopeItem } from '../types';
-import { APPLICATIONS, CATEGORIES, EXPIRY_OPTIONS, MOCK_CUSTOMERS } from '../constants';
+import { APPLICATIONS, CATEGORIES, EXPIRY_OPTIONS, MOCK_CUSTOMERS, COMMON_ENDPOINTS } from '../constants';
 import { ArrowLeftIcon } from './icons/ArrowLeftIcon';
 
 interface TokenGeneratorFormProps {
@@ -32,43 +32,84 @@ export const TokenGeneratorForm: React.FC<TokenGeneratorFormProps> = ({ onGenera
     const [allowedEmails, setAllowedEmails] = useState<string>('');
     const [allowedDomains, setAllowedDomains] = useState<string>('');
     
-    const [selectedScope, setSelectedScope] = useState<Record<string, string[]>>({});
+    const [selectedCustomerCodes, setSelectedCustomerCodes] = useState<string[]>([]);
+    const [selectedEndpoints, setSelectedEndpoints] = useState<string[]>([]);
+    
+    const customerSelectAllRef = useRef<HTMLInputElement>(null);
+    const endpointSelectAllRef = useRef<HTMLInputElement>(null);
+
+    useEffect(() => {
+        if (customerSelectAllRef.current) {
+            const allSelected = selectedCustomerCodes.length === MOCK_CUSTOMERS.length;
+            const someSelected = selectedCustomerCodes.length > 0 && !allSelected;
+            customerSelectAllRef.current.indeterminate = someSelected;
+            customerSelectAllRef.current.checked = allSelected;
+        }
+    }, [selectedCustomerCodes]);
+
+    useEffect(() => {
+        if (endpointSelectAllRef.current) {
+            const allSelected = selectedEndpoints.length === COMMON_ENDPOINTS.length;
+            const someSelected = selectedEndpoints.length > 0 && !allSelected;
+            endpointSelectAllRef.current.indeterminate = someSelected;
+            endpointSelectAllRef.current.checked = allSelected;
+        }
+    }, [selectedEndpoints]);
+
 
     const isFormValid = useMemo(() => {
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
         if (!emailRegex.test(email)) return false;
         if (expiry === 'custom' && !customExpiry) return false;
-        // Fix: Explicitly type `v` as `string[]` to resolve TypeScript inference issue with `Object.values`.
-        if (Object.keys(selectedScope).length === 0 || Object.values(selectedScope).every((v: string[]) => v.length === 0)) return false;
+        if (selectedCustomerCodes.length === 0 || selectedEndpoints.length === 0) return false;
         return true;
-    }, [email, expiry, customExpiry, selectedScope]);
+    }, [email, expiry, customExpiry, selectedCustomerCodes, selectedEndpoints]);
 
-    const handleScopeChange = useCallback((customerCode: string, endpoint: string, isChecked: boolean) => {
-        setSelectedScope(prev => {
-            const currentEndpoints = prev[customerCode] || [];
-            const newEndpoints = isChecked
-                ? [...currentEndpoints, endpoint]
-                : currentEndpoints.filter(e => e !== endpoint);
-            
-            const newScope = { ...prev };
-            if (newEndpoints.length > 0) {
-                newScope[customerCode] = newEndpoints;
-            } else {
-                delete newScope[customerCode];
-            }
-            return newScope;
-        });
+    const handleCustomerToggle = useCallback((customerCode: string, isChecked: boolean) => {
+        setSelectedCustomerCodes(prev =>
+            isChecked
+                ? [...prev, customerCode]
+                : prev.filter(code => code !== customerCode)
+        );
     }, []);
+    
+    const handleSelectAllCustomers = useCallback(() => {
+        if (selectedCustomerCodes.length < MOCK_CUSTOMERS.length) {
+            setSelectedCustomerCodes(MOCK_CUSTOMERS.map(c => c.code));
+        } else {
+            setSelectedCustomerCodes([]);
+        }
+    }, [selectedCustomerCodes]);
+
+    const handleEndpointToggle = useCallback((endpoint: string, isChecked: boolean) => {
+        setSelectedEndpoints(prev => 
+            isChecked
+                ? [...prev, endpoint]
+                : prev.filter(e => e !== endpoint)
+        );
+    }, []);
+
+    const handleSelectAllEndpoints = useCallback(() => {
+        if (selectedEndpoints.length < COMMON_ENDPOINTS.length) {
+            setSelectedEndpoints([...COMMON_ENDPOINTS]);
+        } else {
+            setSelectedEndpoints([]);
+        }
+    }, [selectedEndpoints]);
+
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         if (!isFormValid) return;
 
-        const scope: ScopeItem[] = Object.keys(selectedScope).map((customerCode) => ({
-            customerCode,
-            customerName: MOCK_CUSTOMERS.find(c => c.code === customerCode)?.name || 'Unknown',
-            allowedEndpoints: selectedScope[customerCode],
-        }));
+        const scope: ScopeItem[] = selectedCustomerCodes.map((customerCode) => {
+            const customer = MOCK_CUSTOMERS.find(c => c.code === customerCode)!;
+            return {
+                customerCode,
+                customerName: customer.name,
+                allowedEndpoints: selectedEndpoints,
+            };
+        });
         
         const request: TokenGenerationRequest = {
             appId,
@@ -159,26 +200,64 @@ export const TokenGeneratorForm: React.FC<TokenGeneratorFormProps> = ({ onGenera
                                 )}
                                 
                                 {activeTab === Tab.Scope && (
-                                    <div className="space-y-4 animate-fadeIn max-h-96 overflow-y-auto pr-2">
-                                        <p className="text-sm text-gray-400">Select customers and the specific API endpoints this token can access.</p>
-                                        {MOCK_CUSTOMERS.map(customer => (
-                                            <div key={customer.code} className="bg-gray-700/50 p-4 rounded-md">
-                                                <h4 className="font-semibold text-white">{customer.name} <span className="text-xs text-gray-400">({customer.code})</span></h4>
-                                                <div className="mt-2 space-y-2">
-                                                    {customer.endpoints.map(endpoint => (
-                                                        <label key={endpoint} className="flex items-center text-sm text-gray-300">
-                                                            <input 
-                                                                type="checkbox" 
-                                                                className="h-4 w-4 rounded border-gray-500 bg-gray-800 text-indigo-600 focus:ring-indigo-500" 
-                                                                checked={selectedScope[customer.code]?.includes(endpoint) || false}
-                                                                onChange={(e) => handleScopeChange(customer.code, endpoint, e.target.checked)}
-                                                            />
-                                                            <span className="ml-3 font-mono text-sm">{endpoint}</span>
-                                                        </label>
-                                                    ))}
+                                    <div className="animate-fadeIn">
+                                        <p className="text-sm text-gray-400">Select customers and the common API endpoints this token can access for them.</p>
+                                        <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-6">
+                                            <div>
+                                                <h4 className="font-semibold text-white mb-2">Customers</h4>
+                                                <div className="bg-gray-700/50 rounded-md max-h-80 overflow-y-auto">
+                                                    <label className="flex items-center text-sm text-gray-300 p-3 border-b border-gray-600 sticky top-0 bg-gray-700/80 backdrop-blur-sm">
+                                                        <input 
+                                                            type="checkbox" 
+                                                            ref={customerSelectAllRef}
+                                                            className="h-4 w-4 rounded border-gray-500 bg-gray-800 text-indigo-600 focus:ring-indigo-500" 
+                                                            onChange={handleSelectAllCustomers}
+                                                        />
+                                                        <span className="ml-3 font-semibold">Select All Customers</span>
+                                                    </label>
+                                                    <div className="p-2 pr-1 space-y-1">
+                                                        {MOCK_CUSTOMERS.map(customer => (
+                                                            <label key={customer.code} className="flex items-center text-sm text-gray-300 p-2 rounded-md hover:bg-gray-600/50 transition-colors">
+                                                                <input 
+                                                                    type="checkbox" 
+                                                                    className="h-4 w-4 rounded border-gray-500 bg-gray-800 text-indigo-600 focus:ring-indigo-500" 
+                                                                    checked={selectedCustomerCodes.includes(customer.code)}
+                                                                    onChange={(e) => handleCustomerToggle(customer.code, e.target.checked)}
+                                                                />
+                                                                <span className="ml-3">{customer.name} <span className="text-xs text-gray-400">({customer.code})</span></span>
+                                                            </label>
+                                                        ))}
+                                                    </div>
                                                 </div>
                                             </div>
-                                        ))}
+                                            <div>
+                                                 <h4 className="font-semibold text-white mb-2">Allowed Endpoints</h4>
+                                                 <div className="bg-gray-700/50 rounded-md max-h-80 overflow-y-auto">
+                                                    <label className="flex items-center text-sm text-gray-300 p-3 border-b border-gray-600 sticky top-0 bg-gray-700/80 backdrop-blur-sm">
+                                                        <input 
+                                                            type="checkbox" 
+                                                            ref={endpointSelectAllRef}
+                                                            className="h-4 w-4 rounded border-gray-500 bg-gray-800 text-indigo-600 focus:ring-indigo-500" 
+                                                            onChange={handleSelectAllEndpoints}
+                                                        />
+                                                        <span className="ml-3 font-semibold">Select All Endpoints</span>
+                                                    </label>
+                                                     <div className="p-2 pr-1 space-y-1">
+                                                        {COMMON_ENDPOINTS.map(endpoint => (
+                                                            <label key={endpoint} className="flex items-center text-sm text-gray-300 p-2 rounded-md hover:bg-gray-600/50 transition-colors">
+                                                                <input 
+                                                                    type="checkbox" 
+                                                                    className="h-4 w-4 rounded border-gray-500 bg-gray-800 text-indigo-600 focus:ring-indigo-500" 
+                                                                    checked={selectedEndpoints.includes(endpoint)}
+                                                                    onChange={(e) => handleEndpointToggle(endpoint, e.target.checked)}
+                                                                />
+                                                                <span className="ml-3 font-mono text-sm">{endpoint}</span>
+                                                            </label>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
                                     </div>
                                 )}
                             </div>
